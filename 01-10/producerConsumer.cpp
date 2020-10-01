@@ -1,53 +1,78 @@
-#include <iostream>
 #include <pthread.h>
 #include <semaphore.h>
 #include <stdlib.h>
+#include <stdio.h>
 
-#define MSG_MAX 50
+/*
+This program provides a possible solution for producer-consumer problem using mutex and semaphore.
+I have used 5 producers and 5 consumers to demonstrate the solution. You can always play with these values.
+*/
 
-int n_threads = 1;
+#define MaxItems 5 // Maximum items a producer can produce or a consumer can consume
+#define BufferSize 5 // Size of the buffer
 
-sem_t* semaphores;
-char** messages;
+sem_t empty;
+sem_t full;
+int in = 0;
+int out = 0;
+int buffer[BufferSize];
+pthread_mutex_t mutex;
 
-void* Send_msg(void* rank){
-    long my_rank = (long)rank;
-    long dest = (my_rank+1) % n_threads;
-    char* msg = new char[MSG_MAX];
-
-    sprintf(msg, "Hello to %ld from %ld", dest, my_rank);
-
-    messages[dest] = msg;
-    sem_post(&semaphores[dest]);
-
-    sem_wait(&semaphores[my_rank]);
-    printf("Thread %ld > %s\n", my_rank, messages[my_rank]);
-    
-
-    return NULL;
-
+void *chef(void *pno)
+{   
+    int item;
+    for(int i = 0; i < MaxItems; i++) {
+        item = rand(); // Produce an random item
+        sem_wait(&empty);
+        pthread_mutex_lock(&mutex);
+        buffer[in] = item;
+        printf("Producer %d: Insert Item %d at %d\n", *((int *)pno),buffer[in],in);
+        in = (in+1)%BufferSize;
+        pthread_mutex_unlock(&mutex);
+        sem_post(&full);
+    }
+}
+void *waiter(void *cno)
+{   
+    for(int i = 0; i < MaxItems; i++) {
+        sem_wait(&full);
+        pthread_mutex_lock(&mutex);
+        int item = buffer[out];
+        printf("Consumer %d: Remove Item %d from %d\n",*((int *)cno),item, out);
+        out = (out+1)%BufferSize;
+        pthread_mutex_unlock(&mutex);
+        sem_post(&empty);
+    }
 }
 
-int main(int argc, char* argv[]){
-    n_threads = atoi(argv[1]);
-    pthread_t* my_threads = new pthread_t[n_threads];
-    semaphores = new sem_t[n_threads];
-    messages = new char*[n_threads];
-    for(int i=0;i<n_threads;i++){
-        messages[i] = new char[MSG_MAX];
+int main()
+{   
+
+    pthread_t pro[5],con[5];
+    pthread_mutex_init(&mutex, NULL);
+    sem_init(&empty,0,BufferSize);
+    sem_init(&full,0,0);
+
+    int a[5] = {1,2,3,4,5}; //Just used for numbering the producer and consumer
+
+    for(int i = 0; i < 5; i++) {
+        pthread_create(&pro[i], NULL, (void *)chef, (void *)&a[i]);
     }
-    for(long thread=0;thread<n_threads;thread++){
-        pthread_create(&my_threads[thread],NULL, Send_msg, (void*)thread);
+    for(int i = 0; i < 5; i++) {
+        pthread_create(&con[i], NULL, (void *)waiter, (void *)&a[i]);
     }
-    for(long i=0;i<n_threads;i++){
-        pthread_join(my_threads[i], NULL);
+
+    for(int i = 0; i < 5; i++) {
+        pthread_join(pro[i], NULL);
     }
+    for(int i = 0; i < 5; i++) {
+        pthread_join(con[i], NULL);
+    }
+
+    pthread_mutex_destroy(&mutex);
+    sem_destroy(&empty);
+    sem_destroy(&full);
+
+    return 0;
     
-    delete[] semaphores;
-
-    for(int i=0;i<n_threads;i++){
-        delete[] messages[i];
-    }
-    delete[] messages;
-
 }
